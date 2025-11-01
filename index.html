@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Radios de Chile</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { font-family: Arial, sans-serif; font-size:12px; text-align:center; background:#fff; margin:6px 0; }
+  h1, h2 { font-size:14px; margin:6px 0; }
+  audio { width:92%; margin:8px auto; display:block; }
+  select, button, a { font-size:12px; padding:4px 6px; margin:6px 2px; }
+  #status { font-size:11px; color:#444; min-height:16px; margin-top:6px; }
+  .row { display:flex; justify-content:center; gap:6px; flex-wrap:wrap; }
+  .muted { color:#b00020; }
+  .tiny { font-size:10px; opacity:.75 }
+</style>
+</head>
+<body>
+
+  <h1>🎧 Radios de Chile</h1>
+
+  <audio id="player" controls preload="none"></audio>
+
+  <div class="row">
+    <button id="startBtn" type="button">Iniciar</button>
+  </div>
+
+  <h2>Selecciona tu emisora</h2>
+  <select id="radios">
+    <!-- CHILE MP3 (HTTPS) -->
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/ADN_SC.mp3">ADN</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/ROCKANDPOP_SC.mp3">Rock & Pop</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/CONCIERTO_SC.mp3">Concierto</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/FUTURO_SC.mp3">Futuro</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/IMAGINA_SC.mp3">Imagina</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOPUDH_SC.mp3">Pudahuel</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOCORAZON_SC.mp3">Corazón</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/CAROLINA_SC.mp3">Carolina</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/BEETHOVEN_SC.mp3">Beethoven</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/UNIVERSO_SC.mp3">Universo</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/OASIS_SC.mp3">Oasis</option>
+    <option value="https://playerservices.streamtheworld.com/api/livestream-redirect/ROMANTICA_SC.mp3">Romántica</option>
+
+    <!-- Alternativas libres / comprobadas -->
+    <option value="https://ice2.somafm.com/groovesalad-128-mp3">SomaFM Groove Salad (Chill)</option>
+    <option value="https://ice2.somafm.com/beatblender-128-mp3">SomaFM Beat Blender (Lo-fi)</option>
+  </select>
+
+  <div class="row">
+    <button id="retryBtn" type="button" disabled>Reintentar</button>
+    <button id="nextBtn"  type="button" disabled>Siguiente ▶</button>
+    <a id="openLink" href="#" target="_blank" rel="noopener">Abrir stream</a>
+  </div>
+
+  <div id="status"></div>
+  <div class="tiny">Si no suena dentro de Wix, usa “Abrir stream”.</div>
+
+<script>
+(function(){
+  const player   = document.getElementById('player');
+  const radios   = document.getElementById('radios');
+  const startBtn = document.getElementById('startBtn');
+  const retryBtn = document.getElementById('retryBtn');
+  const nextBtn  = document.getElementById('nextBtn');
+  const statusEl = document.getElementById('status');
+  const openLink = document.getElementById('openLink');
+
+  let started = false;
+  let autoTries = 0;
+  const MAX_AUTO_TRIES = 2;
+  const MAX_FALLBACKS  = 5;
+  let fallbackCount = 0;
+
+  function setStatus(msg, isError=false){
+    statusEl.textContent = msg || '';
+    statusEl.className = isError ? 'muted' : '';
+  }
+
+  function canPlay(url){
+    // Preferimos MP3; si es AAC+ y el navegador lo soporta, también vale.
+    const ext = url.split('?')[0].split('.').pop().toLowerCase();
+    if (ext === 'mp3') return !!player.canPlayType && player.canPlayType('audio/mpeg');
+    // Algunos streams no ponen extensión; probamos ambos
+    const mp3Ok = !!player.canPlayType && player.canPlayType('audio/mpeg');
+    const aacOk = !!player.canPlayType && (player.canPlayType('audio/aac') || player.canPlayType('audio/mp4'));
+    return mp3Ok || aacOk;
+  }
+
+  function explainError() {
+    const err = player.error;
+    if (!err) return '';
+    const map = {1:'Abortado',2:'Red/CORS',3:'Decodificación',4:'No soportada/bloqueada'};
+    return ` Código ${err.code}: ${map[err.code]}`;
+  }
+
+  function currentIndex(){ return radios.selectedIndex >= 0 ? radios.selectedIndex : 0; }
+  function nextIndex(){ return (currentIndex() + 1) % radios.options.length; }
+
+  async function playUrl(url){
+    try {
+      if (!canPlay(url)) throw new Error('Formato no soportado por este navegador en iframe.');
+      player.pause();
+      player.src = url;
+      player.load();
+      const p = player.play();
+      if (p && typeof p.then === 'function') await p;
+      setStatus('Reproduciendo ✅');
+      retryBtn.disabled = false;
+      nextBtn.disabled = false;
+      autoTries = 0; fallbackCount = 0;
+      openLink.href = url;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function handleFailure(){
+    const note = explainError();
+    if (autoTries < MAX_AUTO_TRIES) {
+      autoTries++;
+      setStatus(`Reintentando (${autoTries}/${MAX_AUTO_TRIES})…${note}`);
+      playUrl(radios.value).then(ok => { if(!ok) handleFailure(); });
+      return;
+    }
+    if (fallbackCount < MAX_FALLBACKS) {
+      fallbackCount++;
+      autoTries = 0;
+      radios.selectedIndex = nextIndex();
+      setStatus(`Probando siguiente emisora…${note}`);
+      playUrl(radios.value).then(ok => { if(!ok) handleFailure(); });
+      return;
+    }
+    setStatus(`No se pudo reproducir aquí. Usa “Abrir stream”.${note}`, true);
+  }
+
+  async function cambiarRadio(){
+    if (!started) return; // hasta que el usuario haga click en Iniciar
+    setStatus('Cargando emisora…');
+    const ok = await playUrl(radios.value);
+    if (!ok) handleFailure();
+  }
+
+  // Eventos
+  startBtn.addEventListener('click', async ()=>{
+    started = true;
+    setStatus('Iniciando…');
+    await cambiarRadio();
+  });
+
+  radios.addEventListener('change', cambiarRadio);
+  retryBtn.addEventListener('click', cambiarRadio);
+  nextBtn.addEventListener('click', ()=>{
+    radios.selectedIndex = nextIndex();
+    cambiarRadio();
+  });
+
+  ['error','stalled','abort','emptied'].forEach(ev=>{
+    player.addEventListener(ev, ()=> { if(started) handleFailure(); });
+  });
+
+  // Inicializar link
+  openLink.href = radios.value;
+})();
+</script>
+
+</body>
+</html>
